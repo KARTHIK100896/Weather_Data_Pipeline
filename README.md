@@ -1,25 +1,65 @@
-Project Name: Weather Data Pipeline
-Description:
+import requests
+import pandas as pd
+from sqlalchemy import create_engine
+import sqlalchemy
+import plotly.express as px
 
-As a beginner in Data Engineering and Python, I wanted to take a hands-on approach to solve a real-world problem. Since it was a bit hot in Tamil Nadu, I decided to put my skills to use by building a weather data pipeline that pulls live weather data from an API, processes it, and visualizes temperature trends over time.
 
-Features:
-API Integration: Fetches hourly weather data (temperature) using the Open-Meteo API.
+# 1. Function to fetch weather data , Since im from salem TN, i took salem data from open meteo
+def fetch_weather_data(latitude=11.6538, longitude=78.1554):
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&hourly=temperature_2m"
+    response = requests.get(url)
+    if response.status_code == 200:
+        print("✅ Data fetched successfully!")
+        return response.json()
+    else:
+        raise Exception("❌ Failed to fetch data")
 
-Data Processing: Parses and splits date-time data into separate date and time columns.
 
-Visualization: Plots a temperature vs time graph using Plotly for interactive analysis.
+# 2. Function to process JSON and return DataFrame
+def process_weather_data(data):
+    temperature = data["hourly"]["temperature_2m"]
+    datetime = pd.to_datetime(data["hourly"]["time"])
 
-Database Interaction: Stores processed weather data into a MySQL database for future use.
+    df = pd.DataFrame({
+        "date": datetime.date,
+        "time": datetime.time,
+        "temperature": temperature
+    })
+    return df
 
-Technologies Used:
-Python (requests, pandas, plotly, sqlalchemy, pymysql)
 
-MySQL (for storing processed data)
+# 3. Function to plot temperature vs time
+def plot_temperature(df):
+    df_plot = df.copy()
+    df_plot["datetime"] = pd.to_datetime(df["date"].astype(str) + " " + df["time"].astype(str))
+    fig = px.line(df_plot, x='datetime', y='temperature', title='Hourly Temperature Forecast - Salem')
+    fig.update_xaxes(title="Date and Time")
+    fig.update_yaxes(title="Temperature (°C)")
+    fig.show()
 
-Plotly (for creating interactive visualizations)
 
-APIs (Open-Meteo API)
+# 4. Function to upload DataFrame to MySQL
+def upload_to_mysql(df, table_name="weather_forecast"):
+    username = 'root'
+    password = "password"
+    host = "localhost"
+    port = "3306"
+    database = "mydb"
 
-Motivation:
-Given the hot weather in Tamil Nadu, I thought this would be a great project to put my Python and Data Engineering skills to the test. This project allowed me to dive deep into data collection, data transformation, and visualization, while gaining hands-on experience in API usage and database interaction.
+    engine = create_engine(f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}")
+    df.to_sql(name=table_name, con=engine, if_exists="replace", index=False,
+              dtype={
+                  "date": sqlalchemy.types.Date(),
+                  "time": sqlalchemy.types.Time(),
+                  "temperature": sqlalchemy.types.Float()
+              })
+    print(f"✅ Data uploaded to MySQL table '{table_name}' successfully.")
+
+
+# 5. Main function to call all
+
+raw_data = fetch_weather_data()
+df = process_weather_data(raw_data)
+plot_temperature(df)
+upload_to_mysql(df)
